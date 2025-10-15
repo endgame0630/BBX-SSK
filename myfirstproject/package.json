@@ -1,13 +1,28 @@
 {
-  "name": "myfirstproject",
-  "author": "MakeAwesomeHappen",
+  "name": "Beyblade X Simple Score Keeper",
+  "author": "BossHobbies",
   "version": "1.0.0",
-  "keywords": ["pebble-app"],
+  "keywords": [
+    "pebble-app",
+    "scorekeeper",
+    "game",
+    "beyblade",
+    "score",
+    "tracker",
+    "points",
+    "competition",
+    "round",
+    "match",
+    "sports",
+    "watch",
+    "duo",
+    "simple"
+  ],
   "private": true,
   "dependencies": {},
   "pebble": {
-    "displayName": "myfirstproject",
-    "uuid": "00000000-0000-0000-0000-000000000001",
+    "displayName": "Beyblade X Simple Score Keeper",
+    "uuid": "1a8f8250-7eb2-486f-9cf9-079f4cb8381b",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": [
