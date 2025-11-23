@@ -1,0 +1,31 @@
+{
+  "name": "BBX SSK",
+  "author": "BossHobbies",
+  "version": "1.5.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "BBX SSK",
+    "uuid": "1a8f8250-7eb2-486f-9cf9-079f4cb8381b",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "dummy"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}

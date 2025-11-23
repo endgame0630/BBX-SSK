@@ -1,5 +1,10 @@
 #include <pebble.h>
 
+#ifndef PBL_DEBUG
+#undef APP_LOG
+#define APP_LOG(...) ((void)0)
+#endif
+
 // --- Adaptive Configuration (Fonts) ---
 #define FONT_KEY_SCORE_MAIN FONT_KEY_GOTHIC_28_BOLD
 #define FONT_KEY_LABEL FONT_KEY_GOTHIC_18_BOLD
@@ -52,6 +57,18 @@ static TextLayer *s_p2_round_layer;
 static TextLayer *s_p1_win_layer;
 static TextLayer *s_p2_win_layer;
 static TextLayer *s_target_layer;
+// Store original cell rectangles so we can vertically center text later
+static GRect s_plr_header_rect;
+static GRect s_rnd_header_rect;
+static GRect s_win_header_rect;
+static GRect s_p1_label_rect;
+static GRect s_p1_round_rect;
+static GRect s_p1_win_rect;
+static GRect s_p2_label_rect;
+static GRect s_p2_round_rect;
+static GRect s_p2_win_rect;
+static GRect s_target_rect;
+static GRect s_clock_rect;
 
 // --- Utility / Helpers ---
 static int action_bar_width_always() {
@@ -62,16 +79,57 @@ static int action_bar_width_always() {
   #endif
 }
 
-static TextLayer* create_layer(Layer *parent_layer, GRect rect, GColor text_color, const char *font_key, GTextAlignment alignment) {
+static TextLayer* create_layer(Layer *parent_layer, GRect rect, GColor text_color, GFont font, GTextAlignment alignment) {
   TextLayer *layer = text_layer_create(rect);
   text_layer_set_background_color(layer, GColorClear);
   text_layer_set_text_color(layer, text_color);
-  text_layer_set_font(layer, fonts_get_system_font(font_key));
+  text_layer_set_font(layer, font);
+  // Prevent accidental clipping; prefer ellipsis for headers and center alignment
+  text_layer_set_overflow_mode(layer, GTextOverflowModeTrailingEllipsis);
   text_layer_set_text_alignment(layer, alignment);
   if (parent_layer) {
     layer_add_child(parent_layer, text_layer_get_layer(layer));
   }
   return layer;
+}
+
+// Choose appropriate fonts based on available bounds and score area height.
+static void choose_fonts_for_layout(GRect bounds, int score_h, GFont *out_score_font, GFont *out_label_font, GFont *out_clock_font) {
+  // Default choices
+  const char *score_key = FONT_KEY_GOTHIC_24;
+  const char *label_key = FONT_KEY_GOTHIC_18_BOLD;
+  const char *clock_key = FONT_KEY_GOTHIC_14;
+
+  // Wider or taller displays get bigger fonts.
+  if (bounds.size.w >= 200 || score_h >= 48) {
+    score_key = FONT_KEY_GOTHIC_28_BOLD;
+    label_key = FONT_KEY_GOTHIC_18_BOLD;
+    clock_key = FONT_KEY_GOTHIC_14;
+  } else if (bounds.size.w >= 144 && score_h >= 36) {
+    score_key = FONT_KEY_GOTHIC_24;
+    label_key = FONT_KEY_GOTHIC_18_BOLD;
+    clock_key = FONT_KEY_GOTHIC_14;
+  } else if (bounds.size.w < 144) {
+    // Small screens (aplite narrow) use slightly smaller label font
+    score_key = FONT_KEY_GOTHIC_24;
+    label_key = FONT_KEY_GOTHIC_18_BOLD;
+    clock_key = FONT_KEY_GOTHIC_14;
+  }
+
+  if (out_score_font) *out_score_font = fonts_get_system_font(score_key);
+  if (out_label_font) *out_label_font = fonts_get_system_font(label_key);
+  if (out_clock_font) *out_clock_font = fonts_get_system_font(clock_key);
+}
+
+// Vertically center the given TextLayer inside the provided cell rect.
+static void center_text_layer_vertically(TextLayer *tl, GRect cell_rect) {
+  if (!tl) return;
+  GSize content = text_layer_get_content_size(tl);
+  int content_h = content.h;
+  if (content_h <= 0) return;
+  int y = cell_rect.origin.y + (cell_rect.size.h - content_h) / 2;
+  if (y < cell_rect.origin.y) y = cell_rect.origin.y;
+  layer_set_frame(text_layer_get_layer(tl), GRect(cell_rect.origin.x, y, cell_rect.size.w, content_h));
 }
 
 // --- Score logic ---
@@ -121,20 +179,51 @@ static void update_display() {
   static char s_p2_win_buf[8];
   static char s_target_buf[32];
 
-  snprintf(s_p1_round_buf, sizeof(s_p1_round_buf), "%d", s_state.p1_round_score);
-  text_layer_set_text(s_p1_round_layer, s_p1_round_buf);
+  static int last_p1_round = -1;
+  static int last_p2_round = -1;
+  static int last_p1_game = -1;
+  static int last_p2_game = -1;
+  static int last_target = -1;
 
-  snprintf(s_p2_round_buf, sizeof(s_p2_round_buf), "%d", s_state.p2_round_score);
-  text_layer_set_text(s_p2_round_layer, s_p2_round_buf);
+  if (s_state.p1_round_score != last_p1_round) {
+    if (s_p1_round_layer) {
+      snprintf(s_p1_round_buf, sizeof(s_p1_round_buf), "%d", s_state.p1_round_score);
+      text_layer_set_text(s_p1_round_layer, s_p1_round_buf);
+    }
+    last_p1_round = s_state.p1_round_score;
+  }
 
-  snprintf(s_p1_win_buf, sizeof(s_p1_win_buf), "%d", s_state.p1_game_score);
-  text_layer_set_text(s_p1_win_layer, s_p1_win_buf);
+  if (s_state.p2_round_score != last_p2_round) {
+    if (s_p2_round_layer) {
+      snprintf(s_p2_round_buf, sizeof(s_p2_round_buf), "%d", s_state.p2_round_score);
+      text_layer_set_text(s_p2_round_layer, s_p2_round_buf);
+    }
+    last_p2_round = s_state.p2_round_score;
+  }
 
-  snprintf(s_p2_win_buf, sizeof(s_p2_win_buf), "%d", s_state.p2_game_score);
-  text_layer_set_text(s_p2_win_layer, s_p2_win_buf);
+  if (s_state.p1_game_score != last_p1_game) {
+    if (s_p1_win_layer) {
+      snprintf(s_p1_win_buf, sizeof(s_p1_win_buf), "%d", s_state.p1_game_score);
+      text_layer_set_text(s_p1_win_layer, s_p1_win_buf);
+    }
+    last_p1_game = s_state.p1_game_score;
+  }
 
-  snprintf(s_target_buf, sizeof(s_target_buf), "Target: %d", s_target_score);
-  text_layer_set_text(s_target_layer, s_target_buf);
+  if (s_state.p2_game_score != last_p2_game) {
+    if (s_p2_win_layer) {
+      snprintf(s_p2_win_buf, sizeof(s_p2_win_buf), "%d", s_state.p2_game_score);
+      text_layer_set_text(s_p2_win_layer, s_p2_win_buf);
+    }
+    last_p2_game = s_state.p2_game_score;
+  }
+
+  if (s_target_score != last_target) {
+    if (s_target_layer) {
+      snprintf(s_target_buf, sizeof(s_target_buf), "Target: %d", s_target_score);
+      text_layer_set_text(s_target_layer, s_target_buf);
+    }
+    last_target = s_target_score;
+  }
 }
 
 // --- Clock (always 24-hour) ---
@@ -170,32 +259,39 @@ static void decor_update_proc(Layer *layer, GContext *ctx) {
   int avail_h = bounds.size.h - top_after_clock - V_PADDING;
   if (avail_h <= 0) return;
 
-  int header_h = (int)(avail_h * 0.12f);
-  if (header_h < 12) header_h = 12;
-  int score_h = (avail_h - header_h) / 2;
+  // Mirror the main window's layout algorithm so decorative lines align with content.
+  int score_h = (avail_h * 35) / 100; // each player's area
   if (score_h < 20) score_h = 20;
+  int header_h = avail_h - (2 * score_h);
+  if (header_h < 18) {
+    header_h = 18;
+    score_h = (avail_h - header_h) / 2;
+    if (score_h < 20) score_h = 20;
+  }
 
-  // Columns
+  // Columns: draw only vertical separators and horizontal row separators
   int col_width = inner_width / 3;
-  int x_col_1 = left_margin + col_width;
-  int x_col_2 = left_margin + 2 * col_width;
+  // Center the table horizontally (must match main_window_load)
+  int table_w = inner_width;
+  int table_left = (bounds.size.w - table_w) / 2;
+  int x_col_1 = table_left + col_width;
+  int x_col_2 = table_left + 2 * col_width;
 
-  int top = top_after_clock;
-  int bottom = top + header_h + (2 * score_h);
+  // Center the table vertically (must match main_window_load)
+  int table_h = header_h + (2 * score_h);
+  int top = top_after_clock + ((avail_h - table_h) / 2);
+  int bottom = top + table_h;
 
+  // Vertical lines between columns
   graphics_draw_line(ctx, GPoint(x_col_1, top), GPoint(x_col_1, bottom));
   graphics_draw_line(ctx, GPoint(x_col_2, top), GPoint(x_col_2, bottom));
 
+  // Horizontal separators: header bottom and between player rows
   int header_bottom = top + header_h;
-  graphics_draw_line(ctx, GPoint(left_margin, header_bottom), GPoint(bounds.size.w - right_margin, header_bottom));
+  graphics_draw_line(ctx, GPoint(table_left, header_bottom), GPoint(table_left + table_w, header_bottom));
 
-  int target_h = header_h;
-  int target_y = top + header_h + (2 * score_h) + 4;
-  if (target_y + target_h + 4 > bounds.size.h) {
-    target_y = bounds.size.h - target_h - 6;
-  }
-  GRect target_box = GRect(left_margin, target_y - 2, inner_width, target_h + 4);
-  graphics_draw_round_rect(ctx, target_box, 4);
+  int row_sep = header_bottom + score_h;
+  graphics_draw_line(ctx, GPoint(table_left, row_sep), GPoint(table_left + table_w, row_sep));
 }
 
 // --- Click handlers for main window ---
@@ -223,12 +319,20 @@ static void down_long_click_handler(ClickRecognizerRef recognizer, void *context
   update_display();
   vibes_short_pulse();
 }
+static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
+  // Full reset when back is pressed from main window
+  reset_all_scores();
+  update_display();
+  // pop this window to return to the previous menu
+  window_stack_pop(true);
+}
 static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
   window_long_click_subscribe(BUTTON_ID_UP, 700, up_long_click_handler, NULL);
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
   window_long_click_subscribe(BUTTON_ID_DOWN, 700, down_long_click_handler, NULL);
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
+  window_single_click_subscribe(BUTTON_ID_BACK, back_click_handler);
 }
 
 // --- Menu callbacks ---
@@ -377,7 +481,8 @@ static void custom_target_window_load(Window *window) {
 
   window_set_background_color(window, GColorWhite);
 
-  s_custom_display_layer = create_layer(window_layer, bounds, GColorBlack, FONT_KEY_LABEL, GTextAlignmentCenter);
+  GFont label_font = fonts_get_system_font(FONT_KEY_LABEL);
+  s_custom_display_layer = create_layer(window_layer, bounds, GColorBlack, label_font, GTextAlignmentCenter);
   if (s_target_score < 1) s_target_score = 1;
   if (s_target_score > 10) s_target_score = 10;
 
@@ -408,7 +513,9 @@ static void main_window_load(Window *window) {
   if (clock_height > 28) clock_height = 28;
 
   // Create clock (top, full width)
-  s_clock_layer = create_layer(window_layer, GRect(0, V_PADDING, bounds.size.w, clock_height), GColorBlack, FONT_KEY_GOTHIC_14, GTextAlignmentCenter);
+  GFont clock_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  s_clock_rect = GRect(0, V_PADDING, bounds.size.w, clock_height);
+  s_clock_layer = create_layer(window_layer, s_clock_rect, GColorBlack, clock_font, GTextAlignmentCenter);
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
   tick_handler(t, MINUTE_UNIT);
@@ -425,21 +532,32 @@ static void main_window_load(Window *window) {
   int avail_h = bounds.size.h - top_after_clock - V_PADDING;
   if (avail_h < 40) avail_h = bounds.size.h - top_after_clock;
 
-  int header_h = (int)(avail_h * 0.12f);
-  if (header_h < 12) header_h = 12;
-  int score_h = (avail_h - header_h) / 2;
+  // Allocate about 35% of the available area to each player score region (P1, P2)
+  int score_h = (avail_h * 35) / 100; // each player's area
   if (score_h < 20) score_h = 20;
-  if (header_h + 2 * score_h > avail_h) {
-    header_h = avail_h - 2 * score_h;
-    if (header_h < 10) header_h = 10;
+
+  // Header gets the remaining space; enforce a sensible minimum so headers don't clip
+  int header_h = avail_h - (2 * score_h);
+  if (header_h < 18) {
+    header_h = 18;
+    score_h = (avail_h - header_h) / 2;
+    if (score_h < 20) score_h = 20;
   }
 
-  const int header_y = top_after_clock;
+  // Center the score table vertically and horizontally within available area
+  const int table_h = header_h + (2 * score_h);
+  const int table_top = top_after_clock + ((avail_h - table_h) / 2);
+  const int header_y = table_top;
   const int p1_y = header_y + header_h;
   const int p2_y = p1_y + score_h;
   const int target_y = p2_y + score_h + 4;
 
-  // Choose fonts based on width for scaling
+  // Center horizontally: use inner_width as table width and center it in the full bounds
+  const int table_w = inner_width;
+  const int table_left = (bounds.size.w - table_w) / 2;
+  const int left_margin_for_table = table_left;
+
+  // Choose fonts based on width for scaling (cache GFont handles)
   const char *score_font_key;
   const char *label_font_key;
   if (bounds.size.w >= 200) {
@@ -452,6 +570,10 @@ static void main_window_load(Window *window) {
     score_font_key = FONT_KEY_GOTHIC_24;
     label_font_key = FONT_KEY_GOTHIC_18_BOLD;
   }
+  GFont score_font = fonts_get_system_font(score_font_key);
+  GFont label_font = fonts_get_system_font(label_font_key);
+  // Choose more appropriate fonts based on computed score height
+  choose_fonts_for_layout(bounds, score_h, &score_font, &label_font, NULL);
 
   #ifdef PBL_COLOR
     const GColor p1_color = GColorRed;
@@ -463,37 +585,64 @@ static void main_window_load(Window *window) {
     const GColor header_color = GColorBlack;
   #endif
 
-  // Decorative layer behind text
+  // Decorative layer behind text (lines between columns/rows)
   s_decor_layer = layer_create(bounds);
   layer_set_update_proc(s_decor_layer, decor_update_proc);
   layer_add_child(window_layer, s_decor_layer);
 
-  // Headers
-  s_plr_header_layer = create_layer(window_layer, GRect(left_margin, header_y + V_PADDING, col_width, header_h - V_PADDING), header_color, label_font_key, GTextAlignmentCenter);
+  // Headers (store rects then create layers and vertically center text)
+  s_plr_header_rect = GRect(left_margin_for_table, header_y, col_width, header_h);
+  s_plr_header_layer = create_layer(window_layer, s_plr_header_rect, header_color, label_font, GTextAlignmentCenter);
   text_layer_set_text(s_plr_header_layer, "PLR");
+  center_text_layer_vertically(s_plr_header_layer, s_plr_header_rect);
 
-  s_rnd_header_layer = create_layer(window_layer, GRect(left_margin + col_width, header_y + V_PADDING, col_width, header_h - V_PADDING), header_color, label_font_key, GTextAlignmentCenter);
+  s_rnd_header_rect = GRect(left_margin_for_table + col_width, header_y, col_width, header_h);
+  s_rnd_header_layer = create_layer(window_layer, s_rnd_header_rect, header_color, label_font, GTextAlignmentCenter);
   text_layer_set_text(s_rnd_header_layer, "RND");
+  center_text_layer_vertically(s_rnd_header_layer, s_rnd_header_rect);
 
-  s_win_header_layer = create_layer(window_layer, GRect(left_margin + 2 * col_width, header_y + V_PADDING, col_width, header_h - V_PADDING), header_color, label_font_key, GTextAlignmentCenter);
+  s_win_header_rect = GRect(left_margin_for_table + 2 * col_width, header_y, col_width, header_h);
+  s_win_header_layer = create_layer(window_layer, s_win_header_rect, header_color, label_font, GTextAlignmentCenter);
   text_layer_set_text(s_win_header_layer, "WIN");
+  center_text_layer_vertically(s_win_header_layer, s_win_header_rect);
 
-  // Player 1
-  s_p1_label_layer = create_layer(window_layer, GRect(left_margin, p1_y, col_width, score_h), p1_color, score_font_key, GTextAlignmentCenter);
+  // Player 1 (store rects and center)
+  s_p1_label_rect = GRect(left_margin_for_table, p1_y, col_width, score_h);
+  s_p1_label_layer = create_layer(window_layer, s_p1_label_rect, p1_color, score_font, GTextAlignmentCenter);
   text_layer_set_text(s_p1_label_layer, "P1");
+  center_text_layer_vertically(s_p1_label_layer, s_p1_label_rect);
 
-  s_p1_round_layer = create_layer(window_layer, GRect(left_margin + col_width, p1_y, col_width, score_h), p1_color, score_font_key, GTextAlignmentCenter);
-  s_p1_win_layer  = create_layer(window_layer, GRect(left_margin + 2 * col_width, p1_y, col_width, score_h), p1_color, score_font_key, GTextAlignmentCenter);
+  s_p1_round_rect = GRect(left_margin_for_table + col_width, p1_y, col_width, score_h);
+  s_p1_round_layer = create_layer(window_layer, s_p1_round_rect, p1_color, score_font, GTextAlignmentCenter);
+  { char buf[8]; snprintf(buf, sizeof(buf), "%d", s_state.p1_round_score); text_layer_set_text(s_p1_round_layer, buf); }
+  center_text_layer_vertically(s_p1_round_layer, s_p1_round_rect);
 
-  // Player 2
-  s_p2_label_layer = create_layer(window_layer, GRect(left_margin, p2_y, col_width, score_h), p2_color, score_font_key, GTextAlignmentCenter);
+  s_p1_win_rect = GRect(left_margin_for_table + 2 * col_width, p1_y, col_width, score_h);
+  s_p1_win_layer  = create_layer(window_layer, s_p1_win_rect, p1_color, score_font, GTextAlignmentCenter);
+  { char buf[8]; snprintf(buf, sizeof(buf), "%d", s_state.p1_game_score); text_layer_set_text(s_p1_win_layer, buf); }
+  center_text_layer_vertically(s_p1_win_layer, s_p1_win_rect);
+
+  // Player 2 (store rects and center)
+  s_p2_label_rect = GRect(left_margin_for_table, p2_y, col_width, score_h);
+  s_p2_label_layer = create_layer(window_layer, s_p2_label_rect, p2_color, score_font, GTextAlignmentCenter);
   text_layer_set_text(s_p2_label_layer, "P2");
+  center_text_layer_vertically(s_p2_label_layer, s_p2_label_rect);
 
-  s_p2_round_layer = create_layer(window_layer, GRect(left_margin + col_width, p2_y, col_width, score_h), p2_color, score_font_key, GTextAlignmentCenter);
-  s_p2_win_layer   = create_layer(window_layer, GRect(left_margin + 2 * col_width, p2_y, col_width, score_h), p2_color, score_font_key, GTextAlignmentCenter);
+  s_p2_round_rect = GRect(left_margin_for_table + col_width, p2_y, col_width, score_h);
+  s_p2_round_layer = create_layer(window_layer, s_p2_round_rect, p2_color, score_font, GTextAlignmentCenter);
+  { char buf[8]; snprintf(buf, sizeof(buf), "%d", s_state.p2_round_score); text_layer_set_text(s_p2_round_layer, buf); }
+  center_text_layer_vertically(s_p2_round_layer, s_p2_round_rect);
 
-  // Target
-  s_target_layer = create_layer(window_layer, GRect(left_margin, target_y, inner_width, header_h), header_color, label_font_key, GTextAlignmentCenter);
+  s_p2_win_rect = GRect(left_margin_for_table + 2 * col_width, p2_y, col_width, score_h);
+  s_p2_win_layer   = create_layer(window_layer, s_p2_win_rect, p2_color, score_font, GTextAlignmentCenter);
+  { char buf[8]; snprintf(buf, sizeof(buf), "%d", s_state.p2_game_score); text_layer_set_text(s_p2_win_layer, buf); }
+  center_text_layer_vertically(s_p2_win_layer, s_p2_win_rect);
+
+  // Target (store rect and center)
+  s_target_rect = GRect(left_margin_for_table, target_y, table_w, header_h);
+  s_target_layer = create_layer(window_layer, s_target_rect, header_color, label_font, GTextAlignmentCenter);
+  { char buf[32]; snprintf(buf, sizeof(buf), "Target: %d", s_target_score); text_layer_set_text(s_target_layer, buf); }
+  center_text_layer_vertically(s_target_layer, s_target_rect);
 
   update_display();
 }

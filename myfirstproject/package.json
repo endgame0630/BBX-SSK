@@ -1,7 +1,7 @@
 {
-  "name": "Beyblade X Simple Score Keeper",
+  "name": "beyblade-x-simple-score-keeper",
   "author": "BossHobbies",
-  "version": "1.0.0",
+  "version": "1.4",
   "keywords": [
     "pebble-app",
     "scorekeeper",
@@ -24,7 +24,7 @@
     "displayName": "Beyblade X Simple Score Keeper",
     "uuid": "1a8f8250-7eb2-486f-9cf9-079f4cb8381b",
     "sdkVersion": "3",
-    "enableMultiJS": true,
+    "enableMultiJS": false,
     "targetPlatforms": [
       "aplite",
       "basalt",
@@ -35,9 +35,9 @@
     "watchapp": {
       "watchface": false
     },
-    "messageKeys": [
-      "dummy"
-    ],
+    "messageKeys": {
+      "dummy": 10000
+    },
     "resources": {
       "media": []
     }
