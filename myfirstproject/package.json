@@ -1,13 +1,13 @@
 {
-  "name": "myfirstproject",
-  "author": "MakeAwesomeHappen",
-  "version": "1.0.0",
+  "name": "BBX SSK",
+  "author": "BossHobbies",
+  "version": "1.6",
   "keywords": ["pebble-app"],
   "private": true,
   "dependencies": {},
   "pebble": {
-    "displayName": "myfirstproject",
-    "uuid": "00000000-0000-0000-0000-000000000001",
+    "displayName": "BBX SSK",
+    "uuid": "1a8f8250-7eb2-486f-9cf9-079f4cb8381b",
     "sdkVersion": "3",
     "enableMultiJS": true,
     "targetPlatforms": [
@@ -15,7 +15,8 @@
       "basalt",
       "chalk",
       "diorite",
-      "emery"
+      "emery",
+      "flint"
     ],
     "watchapp": {
       "watchface": false
