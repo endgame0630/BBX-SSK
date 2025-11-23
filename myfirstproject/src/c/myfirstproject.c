@@ -1,7 +1,3 @@
-Ok, new ask. Here's what I want in the pebble app: progress bars. I want progress bars for the scores, but I don't want them to obscure the score. Just like, make a bar a few pixels wide on the right side of the score box. If there's gray or color behind the score, it'll get muddy on monochrome screens. I'm pasting the current app AND the original HTML so you can see the progress bars I'm talking about.
-
-You can make this into another patch, but keep in mind I'm using Github Codespace and I'm not uploading files, just dropping stuff into the agent chat, ok?
-
 #include <pebble.h>
 
 #ifndef PBL_DEBUG
